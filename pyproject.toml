@@ -1,0 +1,7 @@
+[project]
+name = "buck-and-doe"
+version = "0.1.0"
+description = "CLI version of bulls and cows"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
