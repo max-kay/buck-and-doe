@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from itertools import zip_longest
 import random
 import readline
 from os import get_terminal_size
@@ -8,6 +10,66 @@ GREEN = "\033[0;32m"
 GRAY = "\033[0;61m"
 YELLOW = "\033[0;33m"
 WHITE = "\033[0;37m"
+
+type Color = tuple[float, float, float]
+
+
+@dataclass
+class ColorSpec:
+    bg: None | str | Color
+    fg: None | str | Color
+
+
+class ColorMaker:
+    def __init__(self, colors: dict[str, Color], default: ColorSpec) -> None:
+        self.colors = colors
+
+        self.default_fg: str
+        if default.fg is None:
+            raise ValueError
+        if isinstance(default.fg, str):
+            self.default_fg = ColorMaker.rgb_float_to_ansi(self.colors[default.fg])
+        else:
+            self.default_fg = ColorMaker.rgb_float_to_ansi(default.fg)
+
+        self.default_bg: str
+        if default.bg is None:
+            raise ValueError
+        if isinstance(default.bg, str):
+            self.default_bg = ColorMaker.rgb_float_to_ansi(
+                self.colors[default.bg], background=True
+            )
+        else:
+            self.default_bg = ColorMaker.rgb_float_to_ansi(default.bg, background=True)
+
+    def color(self, s: str, color: ColorSpec) -> str:
+        out = ""
+
+        if color.fg is None:
+            out += self.default_fg
+        elif isinstance(color.fg, str):
+            out += ColorMaker.rgb_float_to_ansi(self.colors[color.fg])
+        else:
+            out += ColorMaker.rgb_float_to_ansi(color.fg)
+
+        if color.bg is None:
+            out += self.default_bg
+        elif isinstance(color.bg, str):
+            out += ColorMaker.rgb_float_to_ansi(self.colors[color.bg], background=True)
+        else:
+            out += ColorMaker.rgb_float_to_ansi(color.bg, background=True)
+
+        return out
+
+    @staticmethod
+    def rgb_float_to_ansi(rgb: Color, background: bool = False) -> str:
+        r, g, b = rgb
+        r = int(max(0, min(1, r)) * 255)
+        g = int(max(0, min(1, g)) * 255)
+        b = int(max(0, min(1, b)) * 255)
+
+        code = 48 if background else 38
+        return f"\x1b[{code};2;{r};{g};{b}m"
 
 
 def clear() -> None:
@@ -52,17 +114,17 @@ class Game:
         len_secret: int | None,
         debug: bool,
         log: bool,
-    ):
+        use_color: bool,
+    ) -> None:
         readline.set_auto_history(False)
-        if not num_symbols:
-            self.num_symbols: int = 8
-        else:
-            self.num_symbols: int = num_symbols
+        self.num_symbols: int = 8
+        if num_symbols is not None:
+            self.num_symbols = num_symbols
 
-        if not len_secret:
-            self.len_secret: int = 5
-        else:
-            self.len_secret: int = len_secret
+        self.len_secret: int = 5
+        if len_secret is not None:
+            self.len_secret = len_secret
+
         self.valid_symbols: list[str] = [
             chr(i + ord("A")) for i in range(self.num_symbols)
         ]
@@ -76,15 +138,18 @@ class Game:
             self.secret_count[c] += 1
         self.debug = debug
         self.log_enabeled = log
+        self.use_color = use_color
         self.last_input_valid = True
 
-    def print_state(self, in_game: bool = True) -> None:
+    def print_state(self, in_game: bool = True) -> int:
         term_width = get_terminal_size().columns
         margin = (term_width - TITLE_WIDTH) // 2
-        print(YELLOW, end="")
+        if self.use_color:
+            print(YELLOW, end="")
         for line in TITLE.splitlines():
             print(" " * margin + line)
-        print(WHITE, end="")
+        if self.use_color:
+            print(WHITE, end="")
 
         print()
 
@@ -102,30 +167,24 @@ class Game:
 
         if in_game:
             symbols = "symbols:" + MARGIN
-            print(
-                " " * (left_margin + first_symbol - len(symbols))
-                + symbols
-                + " ".join(self.valid_symbols)
-            )
+            print(" " * (left_margin + first_symbol - len(symbols)) + symbols, end="")
+            iterators = [iter(self.valid_symbols)] * self.len_secret
+            for group in zip_longest(*iterators, fillvalue=" "):
+                print(
+                    " ".join(group) + "\n " + " " * (left_margin + first_symbol - 1),
+                    end="",
+                )
             print()
 
             secret = "secret:" + MARGIN
+            print(" " * (left_margin + first_symbol - len(secret)) + secret, end="")
+
             if not self.debug:
-                print(
-                    " " * (left_margin + first_symbol - len(secret))
-                    + secret
-                    + " ".join(["_"] * self.len_secret)
-                    + MARGIN
-                    + f"({self.len_secret})"
-                )
+                print(" ".join(["_"] * self.len_secret), end="")
             else:
-                print(
-                    " " * (left_margin + first_symbol - len(secret))
-                    + secret
-                    + " ".join(self.secret)
-                    + MARGIN
-                    + f"({self.len_secret})"
-                )
+                print(" ".join(self.secret), end="")
+
+            print(MARGIN + f"({self.len_secret})")
             print()
 
         for i, guess in enumerate(self.guesses):
@@ -134,12 +193,12 @@ class Game:
                 + template.format(
                     number=i + 1,
                     guess=" ".join(guess),
-                    check=self.check_guess(guess),
+                    check=self.check_guess(guess, self.use_color),
                 )
             )
         if in_game:
-            print()
             print(" " * left_margin + self.status, end="")
+            print()
         return first_symbol + left_margin
 
     def check_guess(self, guess: list[str], use_colors=True) -> str:
@@ -179,6 +238,8 @@ class Game:
 
         readline.add_history(" ".join(guess))
 
+        if len(guess) == 0:
+            return
         if len(guess) < self.len_secret:
             self.status = f"not enough symbols in {' '.join(guess)}\n"
             return
@@ -232,6 +293,7 @@ class Game:
             "count": len(self.valid_symbols),
             "len": self.len_secret,
             "secret": " ".join(self.secret),
+            "num_guesses": len(self.guesses),
             "guesses": [" ".join(g) for g in self.guesses],
         }
         return json.dumps(as_dict, indent=2)
@@ -242,7 +304,9 @@ class Game:
         import datetime
 
         with open(
-            f"logs/{datetime.datetime.today().isoformat()}.json", mode="w"
+            "/Users/maxkrummenacher/py-scripts/buck-and-doe/logs/"
+            f"{datetime.datetime.today().isoformat()}.json",
+            mode="w",
         ) as file:
             print(self.serialize(), file=file, end="")
 
@@ -254,7 +318,7 @@ def print_usage():
     print("    --count   | -c   number of symbols     default: 8")
     print("    --len     | -l   length of the secret  default: 5")
     print("    -C               disable colors")
-    print("    -L               enable logging")
+    print("    -L               disable logging")
     print()
     print("    --help           print this help")
     print("    --explain | -e   print an explantion of the game")
@@ -296,7 +360,8 @@ def parse_argv() -> Game:
     num_symbols = None
     len_secret = None
     debug = False
-    log = False
+    log = True
+    color = True
     try:
         while True:
             flag = next(argiter)
@@ -317,13 +382,9 @@ def parse_argv() -> Game:
                 except ValueError:
                     print("invalid count argument")
             elif flag == "-C":
-                global WHITE, YELLOW, GREEN, GRAY
-                WHITE = ""
-                YELLOW = ""
-                GREEN = ""
-                GRAY = ""
+                color = False
             elif flag == "-L":
-                log = True
+                log = False
             elif flag == "--debug":
                 debug = True
             else:
@@ -331,7 +392,7 @@ def parse_argv() -> Game:
                 print_usage()
     except StopIteration:
         pass
-    return Game(num_symbols, len_secret, debug, log)
+    return Game(num_symbols, len_secret, debug, log, color)
 
 
 if __name__ == "__main__":

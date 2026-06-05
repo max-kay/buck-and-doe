@@ -4,13 +4,17 @@ A CLI version of the pen and paper game.
 
 ## Usage
 ```
-python main.py [--count <int>] [--len <int>] [-C] [-L] [--debug]
+Buck and Doe - Usage
+buck-and-doe [--count <int>] [--len <int>] [-C] [-L]
 
-    --count | -c     number of symbols     default: 8
-    --len   | -l     length of the secret  default: 5
+    --count   | -c   number of symbols     default: 8
+    --len     | -l   length of the secret  default: 5
     -C               disable colors
-    -L               enable logging
-    --debug          print the secret on each turn
+    -L               disable logging
+
+    --help           print this help
+    --explain | -e   print an explantion of the game
+    --debug          show the secret
 ```
 
 To use the script with uv use:
